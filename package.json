@@ -1,0 +1,43 @@
+{
+  "name": "@awsmag/power-msk",
+  "version": "1.0.0",
+  "description": "A package to connect and work with AWS Kafka service",
+  "main": "dist/index.js",
+  "scripts": {
+    "lint": "eslint .",
+    "prettier": "prettier --write .",
+    "build": "node build.js",
+    "postbuild": "tsc"
+  },
+  "types": "dist/types",
+  "files": [
+    "dist",
+    "cert"
+  ],
+  "keywords": [],
+  "author": "Simranjeet Singh",
+  "license": "MIT",
+  "dependencies": {
+    "kafkajs": "^2.2.4"
+  },
+  "devDependencies": {
+    "@types/koa": "^2.13.12",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^20.10.5",
+    "@typescript-eslint/eslint-plugin": "^6.16.0",
+    "esbuild": "^0.19.10",
+    "eslint": "^8.56.0",
+    "eslint-config-prettier": "^9.1.0",
+    "koa": "^2.14.2",
+    "mocha": "^10.2.0",
+    "nyc": "^15.1.0",
+    "prettier": "^3.1.1",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.3.3",
+    "typescript-json-decoder": "^1.0.11"
+  },
+  "directories": {
+    "test": "test"
+  }
+}

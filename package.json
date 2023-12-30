@@ -11,8 +11,7 @@
   },
   "types": "dist/types",
   "files": [
-    "dist",
-    "cert"
+    "dist"
   ],
   "keywords": [],
   "author": "Simranjeet Singh",

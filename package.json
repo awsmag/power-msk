@@ -1,6 +1,6 @@
 {
   "name": "@awsmag/power-msk",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A package to connect and work with AWS Kafka service",
   "main": "dist/index.js",
   "scripts": {

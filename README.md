@@ -1,6 +1,6 @@
 # power-msk
 
-A package to help connect and work with Amazon DocumentDB (with MongoDB compatibility). You can run this package locally by disabling ssl and connecting to a compatible mongodb docker container.
+A package to help connect and work with Amazon Managed Streaming for Apache Kafka (MSK). You can run this package locally by disabling ssl and connecting to a kafka docker container.
 
 ## Badges
 
@@ -10,9 +10,9 @@ A package to help connect and work with Amazon DocumentDB (with MongoDB compatib
 
 The package supports two env variables
 
-`CONNECTION_URI`: Connection string to connect to the instance
+`KAFKA_CLIENTID`: Client od of the cluster
 
-`DB_NAME`: The name of the Db to be configured in client.
+`KAFKA_BROKERS`: Comma separated list of brokers
 
 Both the env vars are optional. You can eithr configure these or can pass them to the function.
 
@@ -27,40 +27,39 @@ install the package fron npm
 ## Usage/Examples
 
 ```javascript
-import { connectDb } from "@awsmag/power-document-db";
+import { getKafkaClient } from "@awsmag/power-msk";
 
-async function useDbWithEnvVarSet() {
-  return await connectDb(); // if en variables are set
+async function useWithEnvVarSet() {
+  return await getKafkaClient(); // if env variables are set
 }
 
-async function useDbWithoutEnvVarSet() {
-  const uri = "mongodb://localhost:27017";
-  const dbName = "test";
-  const ssl = true; // Keep it true when connecting to instance. For local testing and docker container keep it false
-  return await connectDb(uri, dbName, ssl); // if en variables are not set
+async function useWithoutEnvVarSet() {
+  const clientId = "test";
+  const brokers = ["127.0.0.1:9092"];
+  const ssl = false; // Keep it true when connecting to instance. For local testing and docker container keep it false
+  return await getKafkaClient(clientId, brokers, ssl); // if env variables are not set
 }
 ```
 
-The package also supports a Koa middleware to attach the client to ctx.
+The package also supports a Koa middleware to attach the client to ctx. This provides a function to sendmassegs to kafka. For creating consumer you should connect and get the client for implementation.
 
 ```javascript
-import { connectDb, getDbCLientMw } from "@awsmag/power-document-db";
+import { getKafkaClient, getKafkaClientMw } from "@awsmag/power-document-db";
 import Koa from "koa";
 
 const server = new Koa();
-const uri = "mongodb://localhost:27017";
-const dbName = "test";
-const ssl = true; // Keep it true when connecting to instance. For local testing and docker container keep it false
-
+const clientId = "test";
+const brokers = ["127.0.0.1:9092"];
+const ssl = false; // Keep it true when connecting to instance. For local testing and docker container keep it false
 (async () => {
-  await connectDb(uri, dbName, ssl); // if en variables are not set
-  server.use(getDbCLientMw());
+  return await getKafkaClient(clientId, brokers, ssl); // if env variables are not set
+  server.use(getKafkaClientMw());
 
   // rest of your code goes here
 })();
 
-// it will be available as `db` in ctx. In your handler use it like below.
+// it will be available as `kafkaClient` in ctx. In your handler use it like below.
 
-const db = ctx.db;
-// perform functions using db
+const kafkaClient = ctx.kafkaClient;
+// perform functions using kafkaClient
 ```

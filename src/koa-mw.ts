@@ -1,7 +1,6 @@
 import { DefaultState, Middleware } from "koa";
 import { CompressionTypes, Kafka, Message, Producer } from "kafkajs";
 import { getClient } from "./client";
-import config from "./config";
 
 async function sendMesgFn(producer: Producer) {
   return async <T>(events: T[], topic: string) => {
@@ -29,16 +28,8 @@ async function sendMesgFn(producer: Producer) {
   };
 }
 
-export function getKafkaClientMw<T = DefaultState>(
-  clientId: string = config.clientId,
-  brokers: string[] = config.brokers,
-  ssl: boolean = true,
-): Middleware<T> {
-  if (!clientId || !brokers || brokers.length === 0) {
-    throw new Error("clientId and broker list are reuired");
-  }
-
-  const client: Kafka = getClient(clientId, brokers, ssl);
+export function getKafkaClientMw<T = DefaultState>(): Middleware<T> {
+  const client: Kafka = getClient();
 
   const producer = client.producer();
 

@@ -14,7 +14,7 @@ The package supports two env variables
 
 `KAFKA_BROKERS`: Comma separated list of brokers
 
-Both the env vars are optional. You can eithr configure these or can pass them to the function.
+Both the env vars are optional. You can either configure these or can pass them to the function.
 
 ## Installation
 
@@ -44,7 +44,7 @@ async function useWithoutEnvVarSet() {
 The package also supports a Koa middleware to attach the client to ctx. This provides a function to sendmassegs to kafka. For creating consumer you should connect and get the client for implementation.
 
 ```javascript
-import { getKafkaClient, getKafkaClientMw } from "@awsmag/power-document-db";
+import { getKafkaClient, getKafkaClientMw } from "@awsmag/power-msk";
 import Koa from "koa";
 
 const server = new Koa();
@@ -52,7 +52,7 @@ const clientId = "test";
 const brokers = ["127.0.0.1:9092"];
 const ssl = false; // Keep it true when connecting to instance. For local testing and docker container keep it false
 (async () => {
-  return await getKafkaClient(clientId, brokers, ssl); // if env variables are not set
+  await getKafkaClient(clientId, brokers, ssl); // if env variables are not set
   server.use(getKafkaClientMw());
 
   // rest of your code goes here

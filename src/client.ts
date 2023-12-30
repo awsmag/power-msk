@@ -1,4 +1,4 @@
-import { CompressionTypes, Kafka, Message } from "kafkajs";
+import { Kafka } from "kafkajs";
 
 let client: Kafka;
 

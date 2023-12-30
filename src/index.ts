@@ -8,8 +8,12 @@ export function getKafkaClient(
   brokers: string[] = config.brokers,
   ssl: boolean = true,
 ) {
-  if (!clientId || !brokers || brokers.length === 0) {
-    throw new Error("clientId and broker list are reuired");
+  if (!clientId) {
+    throw new Error("clientId is required");
+  }
+
+  if(!Array.isArray(brokers) || brokers.length === 0) {
+    throw new Error("brokers is required");
   }
 
   return getClient(clientId, brokers, ssl);

@@ -10,7 +10,7 @@ A package to help connect and work with Amazon Managed Streaming for Apache Kafk
 
 The package supports two env variables
 
-`KAFKA_CLIENTID`: Client od of the cluster
+`KAFKA_CLIENTID`: Client id of the cluster
 
 `KAFKA_BROKERS`: Comma separated list of brokers
 

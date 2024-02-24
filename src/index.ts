@@ -1,3 +1,4 @@
+import { Kafka as KafkaType } from "kafkajs";
 import config from "./config";
 import { getClient } from "./client";
 
@@ -18,3 +19,5 @@ export function getKafkaClient(
 
   return getClient(clientId, brokers, ssl);
 }
+
+export type Kafka = KafkaType;

@@ -1,4 +1,4 @@
-import { Kafka as KafkaType } from "kafkajs";
+import { Kafka as KafkaType, Producer as ProducerType, Consumer as ConsumerType } from "kafkajs";
 import config from "./config";
 import { getClient } from "./client";
 
@@ -21,3 +21,7 @@ export function getKafkaClient(
 }
 
 export type Kafka = KafkaType;
+
+export type Producer = ProducerType;
+
+export type Consumer = ConsumerType;

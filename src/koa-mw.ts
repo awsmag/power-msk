@@ -2,7 +2,7 @@ import { DefaultState, Middleware } from "koa";
 import { CompressionTypes, Kafka, Message, Producer } from "kafkajs";
 import { getClient } from "./client";
 
-async function sendMesgFn(producer: Producer) {
+function sendMesgFn(producer: Producer) {
   return async <T>(events: T[], topic: string) => {
     if (Array.isArray(events) === false || events.length === 0) {
       throw new Error("Events are required for boradcasting");

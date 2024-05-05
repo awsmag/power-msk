@@ -1,12 +1,14 @@
-import { Kafka } from "kafkajs";
+import { Kafka, SASLOptions } from "kafkajs";
 import config from "./config";
+import { ConnectionOptions } from "tls";
 
 let client: Kafka;
 
 export function connectKafka(
   clientId: string,
   brokers: string[],
-  ssl: boolean = true,
+  ssl: boolean | ConnectionOptions = true,
+  sasl?: SASLOptions
 ) {
   if (!clientId) {
     throw new Error("clientId is required");
@@ -20,16 +22,18 @@ export function connectKafka(
     clientId,
     brokers,
     ssl,
+    sasl
   });
 }
 
 export function getClient(
   clientId: string = config.clientId,
   brokers: string[] = config.brokers,
-  ssl: boolean = true,
+  ssl: boolean | ConnectionOptions = true,
+  sasl?: SASLOptions
 ) {
   if (!client) {
-    connectKafka(clientId, brokers, ssl);
+    connectKafka(clientId, brokers, ssl, sasl);
   }
   return client;
 }

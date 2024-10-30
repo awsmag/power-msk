@@ -1,4 +1,4 @@
-import { Kafka, SASLOptions } from "kafkajs";
+import { Kafka, Mechanism, SASLOptions } from "kafkajs";
 import config from "./config";
 import { ConnectionOptions } from "tls";
 
@@ -8,7 +8,7 @@ export function connectKafka(
   clientId: string,
   brokers: string[],
   ssl: boolean | ConnectionOptions = true,
-  sasl?: SASLOptions
+  sasl?: SASLOptions | Mechanism
 ) {
   if (!clientId) {
     throw new Error("clientId is required");

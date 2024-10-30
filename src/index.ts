@@ -1,4 +1,4 @@
-import { SASLOptions } from "kafkajs";
+import { Mechanism, SASLOptions } from "kafkajs";
 import config from "./config";
 import { getClient } from "./client";
 import { ConnectionOptions } from "tls";
@@ -9,7 +9,7 @@ export function getKafkaClient(
   clientId: string = config.clientId,
   brokers: string[] = config.brokers,
   ssl: boolean | ConnectionOptions = true,
-  sasl?: SASLOptions,
+  sasl?: SASLOptions | Mechanism,
 ) {
   if (!clientId) {
     throw new Error("clientId is required");
@@ -19,7 +19,7 @@ export function getKafkaClient(
     throw new Error("brokers is required");
   }
 
-  return getClient(clientId, brokers, ssl, sasl);
+  return getClient(clientId, brokers, ssl, sasl as any);
 }
 
 export * from "kafkajs";

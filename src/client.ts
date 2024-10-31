@@ -27,10 +27,10 @@ export function connectKafka(
 }
 
 export function getClient(
-  clientId: string = config.clientId,
-  brokers: string[] = config.brokers,
+  clientId: string = config.clientId as string,
+  brokers: string[] = config.brokers as string[],
   ssl: boolean | ConnectionOptions = true,
-  sasl?: SASLOptions
+  sasl?: SASLOptions | Mechanism
 ) {
   if (!client) {
     connectKafka(clientId, brokers, ssl, sasl);

@@ -7,7 +7,7 @@ const envDecoder = record({
 
 const data = envDecoder(process.env);
 
-const config: Record<string, any> = {
+const config: Record<string, string | null | Array<string>> = {
   clientId: data.KAFKA_CLIENTID || null,
   brokers: data.KAFKA_BROKERS ?  data.KAFKA_BROKERS.split(",") : []
 }

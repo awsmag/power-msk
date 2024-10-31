@@ -6,8 +6,8 @@ import { ConnectionOptions } from "tls";
 export * from "./koa-mw";
 
 export function getKafkaClient(
-  clientId: string = config.clientId,
-  brokers: string[] = config.brokers,
+  clientId: string = config.clientId as string,
+  brokers: string[] = config.brokers as string[],
   ssl: boolean | ConnectionOptions = true,
   sasl?: SASLOptions | Mechanism,
 ) {
@@ -19,7 +19,7 @@ export function getKafkaClient(
     throw new Error("brokers is required");
   }
 
-  return getClient(clientId, brokers, ssl, sasl as any);
+  return getClient(clientId, brokers, ssl, sasl);
 }
 
 export * from "kafkajs";

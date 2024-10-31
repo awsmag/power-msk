@@ -1,7 +1,6 @@
 import { Kafka, Mechanism, SASLOptions } from "kafkajs";
 import config from "./config";
 import { ConnectionOptions } from "tls";
-import { createMechanism } from "@jm18457/kafkajs-msk-iam-authentication-mechanism";
 
 let client: Kafka;
 
@@ -37,10 +36,4 @@ export function getClient(
     connectKafka(clientId, brokers, ssl, sasl);
   }
   return client;
-}
-
-export function getAWSIAMAuthMechanism(region: string) {
-  return createMechanism({
-    region,
-  });
 }

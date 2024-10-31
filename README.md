@@ -39,6 +39,17 @@ async function useWithoutEnvVarSet() {
   const ssl = false; // Keep it true when connecting to instance. For local testing and docker container keep it false
   return await getKafkaClient(clientId, brokers, ssl); // if env variables are not set
 }
+
+// connecting using AWS IAM
+import { getKafkaClient, getAWSIAMAuthMechanism } from "@awsmag/power-msk";
+
+const sasl = getAWSIAMAuthMechanism("eu-west-1");
+
+const clientId = "test";
+const brokers = ["127.0.0.1:9092"];
+const ssl = true;
+return await getKafkaClient(clientId, brokers, ssl, sasl);
+
 ```
 
 The package also supports a Koa middleware to attach the client to ctx. This provides a function to sendmassegs to kafka. For creating consumer you should connect and get the client for implementation.

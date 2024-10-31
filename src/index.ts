@@ -2,6 +2,7 @@ import { Mechanism, SASLOptions } from "kafkajs";
 import config from "./config";
 import { getClient } from "./client";
 import { ConnectionOptions } from "tls";
+import { createMechanism } from "@jm18457/kafkajs-msk-iam-authentication-mechanism";
 
 export * from "./koa-mw";
 
@@ -20,6 +21,12 @@ export function getKafkaClient(
   }
 
   return getClient(clientId, brokers, ssl, sasl);
+}
+
+export function getAWSIAMAuthMechanism(region: string) {
+  return createMechanism({
+    region,
+  });
 }
 
 export * from "kafkajs";

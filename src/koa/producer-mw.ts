@@ -1,7 +1,7 @@
 // power-msk v2 — Koa middleware for a resilient producer
 import { DefaultState, Middleware } from "koa";
 import { Kafka, KafkaConfig, CompressionTypes, Message } from "kafkajs";
-import { ResilientProducer } from "./producer/resilientProducer";
+import { ResilientProducer } from "../producer/resilientProducer";
 
 declare module "koa" {
   interface DefaultContext {

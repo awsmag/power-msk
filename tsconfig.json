@@ -18,5 +18,5 @@
     "incremental": true,
     "baseUrl": ".",
   },
-  "include": ["*/**.ts"]
+  "include": ["*/**.ts", "src/koa/producer-mw.ts"]
 }

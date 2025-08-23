@@ -111,7 +111,7 @@ export class ConsumerSupervisor {
       rebalanceTimeout,
     });
 
-    const recreate = async () => {
+    async function recreate() {
       await consumer.disconnect();
       consumer = kafka.consumer({ groupId, sessionTimeout, rebalanceTimeout });
       attach(); // reattach listeners after recreation
@@ -120,9 +120,9 @@ export class ConsumerSupervisor {
         await consumer.subscribe({ topic, fromBeginning: !!fromBeginning });
       }
       await run(); // resume run loop
-    };
+    }
 
-    const attach = () => {
+    function attach() {
       attachConsumerResilience(consumer, {
         onNonRetriable: async (reason, err) => {
           console.log(reason, err);
@@ -130,9 +130,9 @@ export class ConsumerSupervisor {
         },
         onCrashed: this.opts.onCrashed ? this.opts.onCrashed : () => {},
       });
-    };
+    }
 
-    const run = async () => {
+    async function run() {
       if (eachBatch) {
         await consumer.run({
           ...runConfig,
@@ -183,7 +183,7 @@ export class ConsumerSupervisor {
           },
         });
       }
-    };
+    }
 
     attach();
     await consumer.connect();

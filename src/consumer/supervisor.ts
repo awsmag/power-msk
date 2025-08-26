@@ -111,6 +111,8 @@ export class ConsumerSupervisor {
       rebalanceTimeout,
     });
 
+    console.log("consumer. created");
+
     async function recreate() {
       await consumer.disconnect();
       consumer = kafka.consumer({ groupId, sessionTimeout, rebalanceTimeout });
@@ -128,7 +130,7 @@ export class ConsumerSupervisor {
           console.log(reason, err);
           await recreate();
         },
-        onCrashed: this.opts.onCrashed ? this.opts.onCrashed : () => {},
+        onCrashed: this.opts.onCrashed ? this.opts.onCrashed : () => {console.log("CRASHED")},
       });
     }
 
@@ -159,12 +161,14 @@ export class ConsumerSupervisor {
           },
         });
       } else if (eachMessage) {
+        console.log("starting consumer")
         await consumer.run({
           ...runConfig,
           autoCommit: runConfig?.autoCommit ?? false,
           eachMessage: async (ctx) => {
             const { topic, partition, message, heartbeat, pause } = ctx;
             try {
+              console.log("setup each message");
               await eachMessage({
                 topic,
                 partition,
@@ -173,6 +177,7 @@ export class ConsumerSupervisor {
                 pause,
               });
             } catch (err) {
+              console.log(err);
               const sel = [{ topic, partitions: [partition] as number[] }];
               pause();
               setTimeout(() => {

@@ -8,7 +8,8 @@
     "prettier": "prettier --write .",
     "build": "node build.js",
     "postbuild": "tsc",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "test:consumer": "BROKERS=localhost:9092 ts-node --transpile-only integ/consumerdebug.ts --topic=test --group=g1 --fromBeginning"
   },
   "types": "dist/types",
   "files": [

@@ -1,0 +1,1 @@
+podman exec -it kafka kafka-topics.sh --bootstrap-server localhost:9092 --create  --topic test

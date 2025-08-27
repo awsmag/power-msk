@@ -120,6 +120,7 @@ export class ResilientProducer {
         // add a warning here
       } finally {
         this.healthy = false;
+        this.ready = false;
         await this.producer?.disconnect();
       }
 
@@ -131,6 +132,7 @@ export class ResilientProducer {
 
   async stop() {
     this.running = false;
+    this.ready = false;
     await this.flusher?.catch(() => {});
     await this.producer?.disconnect();
   }
@@ -186,6 +188,7 @@ export class ResilientProducer {
     });
     this.producer.on(this.producer.events.DISCONNECT, () => {
       this.healthy = false;
+      this.ready = false;
     });
 
     await this.producer.connect();

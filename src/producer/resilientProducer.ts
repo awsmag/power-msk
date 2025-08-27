@@ -1,4 +1,6 @@
 import { Kafka, Producer, Message } from "kafkajs";
+import getLogger, { Logger } from "pino";
+import config from "../config";
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
@@ -28,6 +30,7 @@ export interface ResilientProducerOpts {
   baseRetryMs?: number; // default: 1000
   // return true to recreate producer instance on send error
   recreateOnError?: (err: unknown) => boolean;
+  logger?: Logger;
 }
 
 type Enqueued = {
@@ -50,6 +53,7 @@ type IOpts = Required<
     | "maxQueueBytes"
     | "allowAutoTopicCreation"
     | "maxInFlightRequests"
+    | "logger"
   >
 > & {
   transactionalId?: string;
@@ -75,6 +79,7 @@ export class ResilientProducer {
   private q: Enqueued[] = [];
   private qBytes = 0;
   private flusher?: Promise<void>;
+  private log: Logger;
 
   constructor(opts: ResilientProducerOpts) {
     this.opts = {
@@ -92,6 +97,13 @@ export class ResilientProducer {
         opts.maxInFlightRequests ?? (opts.idempotent ? 5 : 100),
       recreateOnError: opts.recreateOnError ?? (() => true),
     };
+
+    this.log =
+      opts.logger ??
+      getLogger({
+        name: "POWER_MSK_LOGGER",
+        level: config.loggerLevel,
+      });
   }
 
   isHealthy() {
@@ -120,10 +132,13 @@ export class ResilientProducer {
         // add a warning here
       } finally {
         this.healthy = false;
+        this.ready = false;
         await this.producer?.disconnect();
       }
 
-      if (!this.running) break;
+      if (!this.running) {
+        break;
+      }
       attempt++;
       await sleep(backoffMs(this.opts.baseRetryMs, attempt));
     }
@@ -131,13 +146,16 @@ export class ResilientProducer {
 
   async stop() {
     this.running = false;
+    this.ready = false;
     await this.flusher?.catch(() => {});
     await this.producer?.disconnect();
   }
 
   /** Enqueue messages; resolves when that batch is successfully sent */
   async send(topic: string, messages: Message[]) {
-    if (!this.running) throw new Error("producer not started");
+    if (!this.running) {
+      throw new Error("producer not started");
+    }
     const bytes = approxSize(messages);
     if (this.qBytes + bytes > this.opts.maxQueueBytes) {
       throw new Error("producer queue is full");
@@ -160,7 +178,9 @@ export class ResilientProducer {
   async withTransaction<T>(
     fn: (txn: Awaited<ReturnType<Producer["transaction"]>>) => Promise<T>,
   ) {
-    if (!this.producer) throw new Error("producer not ready");
+    if (!this.producer) {
+      throw new Error("producer not ready");
+    }
     const txn = await this.producer.transaction();
     try {
       const out = await fn(txn);
@@ -173,6 +193,7 @@ export class ResilientProducer {
   }
 
   private async createAndConnect() {
+    this.log.debug("[POWER_MSK_PRODUCER] Creating producer");
     this.producer = this.opts.kafka.producer({
       idempotent: this.opts.idempotent,
       transactionalId: this.opts.transactionalId,
@@ -182,10 +203,13 @@ export class ResilientProducer {
     });
 
     this.producer.on(this.producer.events.CONNECT, () => {
+      this.log.debug("[POWER_MSK_PRODUCER] Connected");
       this.healthy = true;
     });
     this.producer.on(this.producer.events.DISCONNECT, () => {
+      this.log.debug("[POWER_MSK_PRODUCER] Disconnected");
       this.healthy = false;
+      this.ready = false;
     });
 
     await this.producer.connect();
@@ -227,6 +251,12 @@ export class ResilientProducer {
             entries.forEach((e) => e.resolve());
             break;
           } catch (err) {
+            this.log.error(
+              {
+                error: err,
+              },
+              "[POWER_MSK_PRODUCER] Sending Message Failure",
+            );
             attempt++;
             const recreate = this.opts.recreateOnError?.(err);
             if (recreate) {
@@ -262,9 +292,15 @@ export class ResilientProducer {
           });
         }
         rest.forEach((it) => it.resolve());
-      } catch (e) {
+      } catch (error) {
+        this.log.error(
+          {
+            error,
+          },
+          "[POWER_MSK_PRODUCER] Issues in draining",
+        );
         const rest = this.dequeueBatch(Number.MAX_SAFE_INTEGER);
-        rest.forEach((it) => it.reject(e));
+        rest.forEach((it) => it.reject(error));
       }
     }
   }

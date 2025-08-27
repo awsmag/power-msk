@@ -1,6 +1,6 @@
 {
   "name": "@awsmag/power-msk",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "description": "A package to connect and work with AWS Kafka service",
   "main": "dist/index.js",
   "scripts": {
@@ -8,7 +8,10 @@
     "prettier": "prettier --write .",
     "build": "node build.js",
     "postbuild": "tsc",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "test": "mocha -r esbuild-register \"test/**/*.spec.ts\" --exit",
+    "test:consumer": "BROKERS=localhost:9092 ts-node --transpile-only integ/consumerdebug.ts --topic=test --group=g1 --fromBeginning",
+    "test:producer": "ts-node --transpile-only integ/producerdebug.ts"
   },
   "types": "dist/types",
   "files": [
@@ -19,20 +22,28 @@
   "license": "MIT",
   "dependencies": {
     "@jm18457/kafkajs-msk-iam-authentication-mechanism": "^3.1.2",
-    "kafkajs": "^2.2.4"
+    "kafkajs": "^2.2.4",
+    "pino": "^9.9.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.33.0",
+    "@types/chai": "^5.2.2",
     "@types/eslint__js": "^8.42.3",
     "@types/koa": "^2.13.12",
     "@types/mocha": "^10.0.10",
     "@types/node": "^20.10.5",
-    "esbuild": "^0.19.10",
+    "@types/sinon": "^17.0.4",
+    "@types/supertest": "^6.0.3",
+    "chai": "^6.0.1",
+    "esbuild": "^0.19.12",
+    "esbuild-register": "^3.6.0",
     "eslint-config-prettier": "^9.1.0",
     "koa": "^2.14.2",
-    "mocha": "^10.2.0",
+    "mocha": "^10.8.2",
     "nyc": "^15.1.0",
     "prettier": "^3.6.2",
+    "sinon": "^21.0.0",
+    "supertest": "^7.1.4",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.9.2",

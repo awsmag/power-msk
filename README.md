@@ -1,30 +1,35 @@
 # power-msk v2
 
-**Resilience-first KafkaJS helpers** for building production-grade apps on top of [KafkaJS](https://kafka.js.org/).
+**Resilience-first KafkaJS helpers** for production-grade apps on [KafkaJS](https://kafka.js.org/).
 
-This package is **focused only on resilient producers and consumers**.  
-You bring your own Kafka configuration (brokers, SSL, SASL, etc).
+👉 Focused on **robust consumers & producers** + simple **Koa middleware**.
+
+👉 You bring your own Kafka config (brokers, SSL, SASL, etc).
 
 ---
 
 ## ✨ Features
 
-- **Resilient Consumer**
-  - Auto-recreate on `STOP` / non-retriable `CRASH`
-  - Partition-level isolation with pause/resume
-  - Full-jitter exponential backoff between lifecycles
-  - Health & readiness flags for probes
+### Resilient Consumer
 
-- **Resilient Producer**
-  - Auto-reconnect & recreate on send errors
-  - Batching (`lingerMs`, `maxBatchSize`) for throughput
-  - Backpressure (`maxQueueBytes`) to prevent OOM
-  - Idempotence & transaction support
-  - Health & readiness flags
+* Auto-recreate on fatal errors (`STOP` / `CRASH` with `restart=false`)
+* Partition-level isolation via pause/resume
+* Full-jitter exponential backoff
+* Health & readiness probes
 
-- **Koa Middleware**
-  - Simple middleware to expose a resilient producer on `ctx.kafkaClient.sendMessages()`
-  - Health helpers available on the same context
+### Resilient Producer
+
+* Auto-reconnect & recreate on send errors
+* Batching (`lingerMs`, `maxBatchSize`) for throughput
+* Backpressure (`maxQueueBytes`) to prevent OOM
+* Idempotence & transactions supported
+* Health & readiness probes
+
+### Koa Middleware
+
+* Exposes a shared resilient producer on `ctx.kafkaClient`
+* `sendMessages()`, `isHealthy()`, `isReady()` available in requests
+* Graceful shutdown hook (`mw.shutdown()`) for clean exits
 
 ---
 
@@ -40,7 +45,7 @@ yarn add @awsmag/power-msk kafkajs
 
 ## 🚀 Quickstart
 
-### 1) Resilient Consumer (eachMessage)
+### 1) Consumer (eachMessage)
 
 ```ts
 import { Kafka } from "kafkajs";
@@ -56,32 +61,25 @@ const sup = new ConsumerSupervisor({
   kafka,
   groupId: "orders-g1",
   topics: ["orders"],
-  eachMessage: async ({ topic, partition, message, resolveOffset, heartbeat }) => {
+  eachMessage: async ({ topic, partition, message }) => {
     const payload = JSON.parse(message.value!.toString());
     console.log("Received", payload);
-
-    resolveOffset(message.offset);
-    if ((Number(message.offset) & 0x3F) === 0) await heartbeat();
   },
 });
 
 await sup.startForever();
 ```
 
-### 2) Resilient Consumer (eachBatch)
+### 2) Consumer (eachBatch)
 
 ```ts
-import { ConsumerSupervisor } from "@awsmag/power-msk";
-
 const sup = new ConsumerSupervisor({
   kafka,
   groupId: "orders-g1",
   topics: ["orders"],
-  eachBatch: async ({ batch, resolveOffset, heartbeat, commitOffsetsIfNecessary }) => {
+  eachBatch: async ({ batch, commitOffsetsIfNecessary }) => {
     for (const m of batch.messages) {
       console.log("Received", m.offset, m.value?.toString());
-      resolveOffset(m.offset);
-      if ((Number(m.offset) & 0x3F) === 0) await heartbeat();
     }
     await commitOffsetsIfNecessary();
   },
@@ -91,13 +89,10 @@ const sup = new ConsumerSupervisor({
 await sup.startForever();
 ```
 
-### 3) Resilient Producer
+### 3) Producer
 
 ```ts
-import { Kafka } from "kafkajs";
 import { ResilientProducer } from "@awsmag/power-msk";
-
-const kafka = new Kafka({ clientId: "orders-app", brokers: ["b1:9092","b2:9092"] });
 
 const producer = new ResilientProducer({
   kafka,
@@ -116,7 +111,7 @@ await producer.sendOne("orders", {
 });
 ```
 
-### 4) Koa Middleware (Producer)
+### 4) Koa Middleware
 
 ```ts
 import Koa from "koa";
@@ -126,11 +121,13 @@ import { getKafkaClientMw } from "@awsmag/power-msk";
 const app = new Koa();
 const router = new Router();
 
-app.use(getKafkaClientMw({
+const kafkaMw = getKafkaClientMw({
   clientId: "my-app",
   brokers: ["b1:9092", "b2:9092"],
   ssl: true,
-}));
+});
+
+app.use(kafkaMw);
 
 router.post("/broadcast", async (ctx) => {
   const events = [{ id: 1, msg: "hello" }];
@@ -143,114 +140,57 @@ router.get("/readyz",  (ctx) => { ctx.status = ctx.kafkaClient!.isReady() ? 200 
 
 app.use(router.routes()).use(router.allowedMethods());
 app.listen(3000);
+
+// optional: stop producer cleanly in tests or shutdown scripts
+// await kafkaMw.shutdown();
 ```
 
 ---
 
-## 🛠 API Overview
+## 🛠 API
 
 ### ConsumerSupervisor
-- `new ConsumerSupervisor(opts)`  
-- `startForever(): Promise<void>`  
-- `stop(): Promise<void>`  
-- `isHealthy(): boolean`  
-- `isReady(): boolean`
+
+* `startForever()`: run until stopped
+* `stop()`: graceful stop
+* `isHealthy()` / `isReady()`
 
 ### ResilientProducer
-- `new ResilientProducer(opts)`  
-- `start(): Promise<void>` / `stop(): Promise<void>`  
-- `send(topic, messages)` / `sendOne(topic, message)`  
-- `withTransaction(fn)`  
-- `isHealthy(): boolean` / `isReady(): boolean`
 
-### createProbeServer
-- `createProbeServer({ port, getHealthy, getReady, extra })`  
+* `start()` / `stop()`
+* `send(topic, messages)` / `sendOne(topic, message)`
+* `withTransaction(fn)`
+* `isHealthy()` / `isReady()`
 
-### getKafkaClientMw
-- Middleware attaches `ctx.kafkaClient` with:
-  - `sendMessages(events[], topic)`
-  - `isHealthy()`
-  - `isReady()`
+### Koa Middleware
 
----
+* `getKafkaClientMw(opts)`
 
-## 💡 Best Practices
+  * Attaches `ctx.kafkaClient` with:
 
-- **Idempotency**: make consumers idempotent; safe to reprocess.  
-- **Manual commits**: use `autoCommit: false`. Commit offsets after success.  
-- **Heartbeats**: call in long loops.  
-- **Backpressure**: handle `queue full` errors in producer.  
-- **Probes**: wire health/readiness into infra.  
+    * `sendMessages(events[], topic)`
+    * `isHealthy()`
+    * `isReady()`
+  * Provides `.shutdown()` for clean exits (esp. in tests)
 
 ---
 
-## 🔄 Migration Guide (v1 → v2)
+## 📚 Detailed Scenarios
 
-### What changed?
-- v1 shipped with **IAM/MSK auth helpers** (auto token refresh, STS, etc).  
-- v2 removes IAM completely — you configure `kafkajs` with your own `ssl` / `sasl` / `oauthBearerProvider`.  
-- v2 focuses only on **resilience**: `ResilientProducer`, `ConsumerSupervisor`, probes, and Koa middleware.
+Want to understand how the **ConsumerSupervisor** and **ResilientProducer** behave in real-world cases (errors, crashes, rebalances, backpressure)?  
 
-### Producer migration
+👉 See [SCENARIOS.md](./Scenario.md) for sequence diagrams and lifecycle walkthroughs.
 
-**v1**:
-```ts
-import { getProducer } from "@awsmag/power-msk";
-const producer = await getProducer();
-await producer.send({ topic: "orders", messages: [{ value: "event" }] });
-```
+---
 
-**v2**:
-```ts
-import { Kafka } from "kafkajs";
-import { ResilientProducer } from "@awsmag/power-msk";
+## 🔄 Migration (v1 → v2)
 
-const kafka = new Kafka({ clientId: "app", brokers: ["..."], ssl: true, sasl: { mechanism: "plain", username: "...", password: "..." } });
-const producer = new ResilientProducer({ kafka });
-await producer.start();
-await producer.sendOne("orders", { value: Buffer.from("event") });
-```
+* **IAM/MSK helpers** dropped. Bring your own `ssl/sasl`.
+* **Producer/Consumer APIs** are now resilience-focused.
+* **Koa middleware** switched from per-request producer → shared resilient producer with auto-recreate.
 
-### Consumer migration
+---
 
-**v1**:
-```ts
-import { getConsumer } from "@awsmag/power-msk";
-const consumer = await getConsumer({ groupId: "g1", topic: "orders" });
-await consumer.run({ eachMessage: async ({ message }) => console.log(message.value?.toString()) });
-```
+Maintained by [AWSMAG](https://awsmag.com) C/O [S25Digital](https://s25.digital).
 
-**v2**:
-```ts
-import { Kafka } from "kafkajs";
-import { ConsumerSupervisor } from "@awsmag/power-msk";
-
-const kafka = new Kafka({ clientId: "app", brokers: ["..."], ssl: true });
-const sup = new ConsumerSupervisor({
-  kafka,
-  groupId: "g1",
-  topics: ["orders"],
-  eachMessage: async ({ message }) => console.log(message.value?.toString()),
-});
-await sup.startForever();
-```
-
-### Koa middleware migration
-
-**v1**:  
-Connected/disconnected producer per request.  
-
-**v2**:  
-Shared resilient producer, auto-recreates on failure.  
-
-```ts
-import { getKafkaClientMw } from "@awsmag/power-msk";
-
-app.use(getKafkaClientMw({ clientId: "my-app", brokers: ["b1:9092"] }));
-
-router.post("/broadcast", async (ctx) => {
-  await ctx.kafkaClient!.sendMessages([{ msg: "hello" }], "orders");
-});
-```
-
-The package is developed and maintained by [AWSMAG](https://awsmag.com) C/O [S25Digital](https://s25.digital).
+---

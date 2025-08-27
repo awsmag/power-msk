@@ -179,7 +179,7 @@ app.listen(3000);
 
 Want to understand how the **ConsumerSupervisor** and **ResilientProducer** behave in real-world cases (errors, crashes, rebalances, backpressure)?  
 
-👉 See [SCENARIOS.md](./SCENARIOS.md) for sequence diagrams and lifecycle walkthroughs.
+👉 See [SCENARIOS.md](./Scenario.md) for sequence diagrams and lifecycle walkthroughs.
 
 ---
 

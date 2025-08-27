@@ -1,4 +1,3 @@
-// power-msk v2 — Koa middleware for a resilient producer
 import { DefaultState, Middleware } from "koa";
 import { Kafka, KafkaConfig, CompressionTypes, Message } from "kafkajs";
 import { ResilientProducer } from "../producer/resilientProducer";
@@ -20,9 +19,11 @@ export type KoaKafkaOptions =
 export function getKafkaClientMw<T = DefaultState>(
   opts: KoaKafkaOptions
 ): Middleware<T> {
+
+  const providedKafka = (opts as any).kafka;
   const kafka =
-    "kafka" in opts && (opts as any).kafka instanceof Kafka //eslint-disable-line
-      ? (opts as { kafka: Kafka }).kafka
+    providedKafka && typeof providedKafka.producer === "function"
+      ? (providedKafka as Kafka)
       : new Kafka(opts as KafkaConfig);
 
   // Single resilient producer for the app (no per-request connect/disconnect)
@@ -37,14 +38,15 @@ export function getKafkaClientMw<T = DefaultState>(
   });
 
   let started = false;
-  async function ensureStarted() {
+  function ensureStarted() {
     if (!started) {
       started = true;
-      await producer.start();
-      // graceful shutdown (optional)
+      // fire-and-forget; do NOT await (start() runs until stop())
+      producer.start().catch(() => {/* swallow; supervisor logs elsewhere */});
+
+      // optional: graceful stop on signals (do NOT exit the process here)
       const shutdown = async () => {
-        await producer.stop();
-        process.exit(0);
+        try { await producer.stop(); } catch {}
       };
       process.once("SIGTERM", shutdown);
       process.once("SIGINT", shutdown);
@@ -62,7 +64,7 @@ export function getKafkaClientMw<T = DefaultState>(
   }
 
   return async (ctx, next) => {
-    await ensureStarted();
+    ensureStarted();
     ctx.kafkaClient = {
       sendMessages,
       isHealthy: () => producer.isHealthy(),

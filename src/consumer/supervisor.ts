@@ -1,18 +1,25 @@
-// @ts-nocheck
 import {
   Consumer,
+  ConsumerConfig,
   ConsumerRunConfig,
   EachBatchPayload,
   EachMessagePayload,
   Kafka,
 } from "kafkajs";
-// NOTE: leave external wrappers disabled during stabilization
-// import { attachConsumerResilience } from "./consumerResilience";
+import getLogger, { Logger } from "pino";
 
-function sleep(ms: number) { return new Promise((r) => setTimeout(r, ms)); }
+import config from "../config";
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 function backoffMs(base: number, attempt: number, cap = 30_000) {
   const exp = Math.min(cap, base * 2 ** attempt);
   return Math.floor(Math.random() * exp); // full jitter
+}
+
+function nextOffset(offset: string): string {
+  return (BigInt(offset) + 1n).toString();
 }
 
 export interface SupervisorOpts {
@@ -28,9 +35,17 @@ export interface SupervisorOpts {
   eachBatch?: (ctx: EachBatchPayload) => Promise<void>;
   eachMessage?: (ctx: EachMessagePayload) => Promise<void>;
 
-  runConfig?: Omit<Parameters<Consumer["run"]>[0], "eachBatch" | "eachMessage"> & ConsumerRunConfig;
+  runConfig?: Omit<
+    Parameters<Consumer["run"]>[0],
+    "eachBatch" | "eachMessage"
+  > &
+    ConsumerRunConfig;
 
-  onCrashed?: () => Promise<void> | void; // optional
+  consumerConfig?: ConsumerConfig;
+
+  onCrashed?: () => Promise<void> | void;
+
+  logger?: Logger;
 }
 
 type IOpts = Required<
@@ -40,6 +55,7 @@ type IOpts = Required<
   eachBatch?: SupervisorOpts["eachBatch"];
   eachMessage?: SupervisorOpts["eachMessage"];
   onCrashed?: SupervisorOpts["onCrashed"];
+  consumerConfig?: SupervisorOpts["consumerConfig"];
 };
 
 export class ConsumerSupervisor {
@@ -49,30 +65,58 @@ export class ConsumerSupervisor {
   private lifecycleInFlight = false;
   private attempt = 0;
   private opts: IOpts;
+  private log: Logger;
 
   constructor(opts: SupervisorOpts) {
-    if (!opts.eachBatch && !opts.eachMessage) throw new Error("Provide either eachBatch or eachMessage.");
-    if (opts.eachBatch && opts.eachMessage) throw new Error("Provide only one of eachBatch or eachMessage.");
+    if (!opts.eachBatch && !opts.eachMessage) {
+      throw new Error("Provide either eachBatch or eachMessage.");
+    }
+
+    if (opts.eachBatch && opts.eachMessage) {
+      throw new Error("Provide only one of eachBatch or eachMessage.");
+    }
+
     this.opts = { ...(opts as IOpts), baseRetryMs: opts.baseRetryMs ?? 1000 };
+
+    this.log =
+      opts.logger ??
+      getLogger({
+        name: "POWER_MSK_LOGGER",
+        level: config.loggerLevel,
+      });
   }
 
-  isHealthy() { return this.healthy; }
-  isReady() { return this.ready; }
-  async stop() { this.stopping = true; }
+  isHealthy() {
+    return this.healthy;
+  }
+  isReady() {
+    return this.ready;
+  }
+  async stop() {
+    this.stopping = true;
+  }
 
   async startForever() {
-    if (this.lifecycleInFlight) return;
+    if (this.lifecycleInFlight) {
+      return;
+    }
     const base = this.opts.baseRetryMs;
 
     // eslint-disable-next-line no-constant-condition
     while (true) {
-      if (this.stopping) break;
+      if (this.stopping) {
+        break;
+      }
+
       try {
         this.lifecycleInFlight = true;
         const outcome = await this.oneLifecycle(); // returns "ok" | "fatal"
         this.lifecycleInFlight = false;
 
-        if (this.stopping) break;
+        if (this.stopping) {
+          break;
+        }
+
         if (outcome === "ok") {
           // normal stop — don’t restart
           break;
@@ -80,20 +124,25 @@ export class ConsumerSupervisor {
           // fatal crash: backoff and recreate
           this.attempt++;
           const d = backoffMs(base, this.attempt);
-          console.warn(`[sup] lifecycle ended after fatal crash; restarting in ${d}ms`);
+          this.log.warn(
+            `[POWER_MSK_CONSUMER_SUPERVISOR] lifecycle ended after fatal crash; restarting in ${d}ms`,
+          );
           await sleep(d);
         }
       } catch (err) {
         this.lifecycleInFlight = false;
         this.attempt++;
         const d = backoffMs(base, this.attempt);
-        console.error("[sup] lifecycle error; restarting", (err as any)?.message ?? err);
+        this.log.error(
+          { error: err },
+          "[POWER_MSK_CONSUMER_SUPERVISOR] lifecycle error; restarting",
+        );
         await sleep(d);
       }
     }
     this.healthy = false;
     this.ready = false;
-    console.info("[sup] stopped");
+    this.log.info("[POWER_MSK_CONSUMER_SUPERVISOR] stopped");
   }
 
   /**
@@ -104,28 +153,52 @@ export class ConsumerSupervisor {
    */
   private async oneLifecycle(): Promise<"ok" | "fatal"> {
     const {
-      kafka, groupId, topics, fromBeginning,
-      sessionTimeout, rebalanceTimeout,
-      runConfig, eachBatch, eachMessage, onCrashed,
+      kafka,
+      groupId,
+      topics,
+      fromBeginning,
+      sessionTimeout,
+      rebalanceTimeout,
+      runConfig,
+      eachBatch,
+      eachMessage,
+      onCrashed,
+      consumerConfig,
     } = this.opts;
 
-    if (!topics || topics.length === 0) throw new Error("ConsumerSupervisor: 'topics' must be a non-empty array");
+    if (!topics || topics.length === 0) {
+      throw new Error("ConsumerSupervisor: 'topics' must be a non-empty array");
+    }
 
     const consumer = kafka.consumer({
+      ...consumerConfig,
       groupId,
       sessionTimeout: sessionTimeout ?? 30_000,
       rebalanceTimeout: rebalanceTimeout ?? 60_000,
     });
-    console.log("[sup] consumer created");
+    this.log.debug("[POWER_MSK_CONSUMER_SUPERVISOR] consumer created");
 
     let fatalCrash = false;
 
-    const crashedHook = onCrashed ?? (() => { /* no-op */ });
+    const crashedHook =
+      onCrashed ??
+      (() => {
+        /* no-op */
+      });
 
     // ---- events (log-only) ----
-    consumer.on(consumer.events.CONNECT, () => console.log("[sup] CONNECT"));
-    consumer.on(consumer.events.DISCONNECT, (e) => console.warn("[sup] DISCONNECT", e?.payload));
-    consumer.on(consumer.events.STOP, () => console.warn("[sup] STOP"));
+    consumer.on(consumer.events.CONNECT, () =>
+      this.log.debug("[POWER_MSK_CONSUMER_SUPERVISOR] CONNECT"),
+    );
+    consumer.on(consumer.events.DISCONNECT, (e) =>
+      this.log.warn(
+        { payload: e?.payload },
+        "[POWER_MSK_CONSUMER_SUPERVISOR] Disconnected",
+      ),
+    );
+    consumer.on(consumer.events.STOP, () =>
+      this.log.warn("[POWER_MSK_CONSUMER_SUPERVISOR] STOP"),
+    );
     consumer.on(consumer.events.GROUP_JOIN, (e) => {
       const ma: any = e?.payload?.memberAssignment;
       let assignments: Array<{ topic: string; partitions: number[] }> = [];
@@ -140,27 +213,57 @@ export class ConsumerSupervisor {
           partitions: Array.isArray(parts) ? (parts as number[]) : [],
         }));
       }
-      console.log("[sup] GROUP_JOIN", {
-        generationId: (e?.payload as any)?.generationId,
-        isLeader: (e?.payload as any)?.isLeader,
-        assigned: assignments.map(a => `${a.topic}[${a.partitions.length}]`),
-      });
+      this.log.debug(
+        {
+          generationId: (e?.payload as any)?.generationId,
+          isLeader: (e?.payload as any)?.isLeader,
+          assigned: assignments.map(
+            (a) => `${a.topic}[${a.partitions.length}]`,
+          ),
+        },
+        "[POWER_MSK_CONSUMER_SUPERVISOR] GROUP_JOIN",
+      );
     });
     consumer.on(consumer.events.CRASH, (e) => {
       const { error, restart } = (e?.payload ?? {}) as any;
-      console.error("[sup] CRASH", { restart, name: error?.name, msg: error?.message });
-      try { crashedHook(); } catch {}
+      this.log.error(
+        {
+          restart,
+          name: error?.name,
+          msg: error?.message,
+        },
+        "[POWER_MSK_CONSUMER_SUPERVISOR] CRASH",
+      );
+      try {
+        crashedHook();
+      } catch {}
       // KafkaJS will auto-restart if restart===true. If false, we mark fatal and let the outer loop recreate.
       if (restart === false) fatalCrash = true;
     });
 
     // Connect & subscribe once
-    console.log("[sup] connect...");
-    await consumer.connect().catch((e) => { console.error("[sup] connect failed", e); throw e; });
+    this.log.debug("[POWER_MSK_CONSUMER_SUPERVISOR] connect...");
+    await consumer.connect().catch((e) => {
+      this.log.error(
+        { error: e },
+        "[POWER_MSK_CONSUMER_SUPERVISOR] connect failed",
+      );
+      throw e;
+    });
     for (const topic of topics) {
-      console.log("[sup] subscribe", { topic, fromBeginning: !!fromBeginning });
-      await consumer.subscribe({ topic, fromBeginning: !!fromBeginning })
-        .catch((e) => { console.error("[sup] subscribe failed", { topic }, e); throw e; });
+      this.log.debug(
+        { topic, fromBeginning: !!fromBeginning },
+        "[POWER_MSK_CONSUMER_SUPERVISOR] subscribe",
+      );
+      await consumer
+        .subscribe({ topic, fromBeginning: !!fromBeginning })
+        .catch((e) => {
+          this.log.error(
+            { topic, error: e },
+            "[POWER_MSK_CONSUMER_SUPERVISOR] subscribe failed",
+          );
+          throw e;
+        });
     }
 
     this.healthy = true;
@@ -168,42 +271,76 @@ export class ConsumerSupervisor {
     this.attempt = 0;
 
     // Start the runner ONCE; it returns immediately and keeps running in background.
-    console.log("[sup] run starting...");
+    this.log.debug("[POWER_MSK_CONSUMER_SUPERVISOR] run starting...");
     if (eachBatch) {
       await consumer.run({
         ...runConfig,
         autoCommit: runConfig?.autoCommit ?? false,
         eachBatchAutoResolve: runConfig?.eachBatchAutoResolve ?? false,
-        heartbeatInterval: runConfig?.heartbeatInterval ?? 3000,
         eachBatch: async (ctx) => {
           try {
             await eachBatch(ctx);
             await ctx.commitOffsetsIfNecessary?.();
-          } catch (err) {
-            const sel = [{ topic: ctx.batch.topic, partitions: [ctx.batch.partition] as number[] }];
-            console.error("[sup] eachBatch error; pausing 5s", { topic: ctx.batch.topic, partition: ctx.batch.partition, err });
-            ctx.pause(sel); // selector REQUIRED in eachBatch
-            setTimeout(() => { try { consumer.resume(sel); } catch {} }, 5000);
-            throw err;
+          } catch (error) {
+            this.log.error(
+              {
+                topic: ctx.batch.topic,
+                partition: ctx.batch.partition,
+                error,
+              },
+              "[POWER_MSK_CONSUMER_SUPERVISOR] eachBatch error; pausing 5s",
+            );
+            const resume = ctx.pause();
+            setTimeout(() => {
+              try {
+                resume();
+              } catch {}
+            }, 5000);
+            throw error;
           }
         },
       });
     } else if (eachMessage) {
-      console.log("[sup] starting consumer");
+      this.log.debug("[POWER_MSK_CONSUMER_SUPERVISOR] starting consumer");
       await consumer.run({
         ...runConfig,
-        autoCommit: runConfig?.autoCommit ?? false,
-        heartbeatInterval: runConfig?.heartbeatInterval ?? 3000,
+        autoCommit: runConfig?.autoCommit ?? true,
         eachMessage: async (ctx) => {
           try {
             await eachMessage(ctx);
-            await ctx.commitOffsetsIfNecessary?.();
-          } catch (err) {
-            console.error("[sup] eachMessage error", err);
-            ctx.pause(); // pauses current partition
-            const sel = [{ topic: ctx.topic, partitions: [ctx.partition] as number[] }];
-            setTimeout(() => { try { consumer.resume(sel); } catch {} }, 5000);
-            throw err;
+            const auto = this.opts.runConfig?.autoCommit;
+            if (auto === false || auto == null) {
+              await consumer.commitOffsets([
+                {
+                  topic: ctx.topic,
+                  partition: ctx.partition,
+                  offset: nextOffset(ctx.message.offset),
+                },
+              ]);
+            }
+          } catch (error) {
+            this.log.error(
+              { error },
+              "[POWER_MSK_CONSUMER_SUPERVISOR] eachMessage error",
+            );
+            const maybeResume = (ctx as any).pause?.();
+            if (typeof maybeResume === "function") {
+              // type where pause() returns a resume()
+              setTimeout(() => {
+                try {
+                  maybeResume();
+                } catch {}
+              }, 5000);
+            } else {
+              const sel = [
+                { topic: ctx.topic, partitions: [ctx.partition] as number[] },
+              ];
+              setTimeout(() => {
+                try {
+                  consumer.resume(sel);
+                } catch {}
+              }, 5000);
+            }
           }
         },
       });
@@ -222,12 +359,21 @@ export class ConsumerSupervisor {
         await consumer.stop().catch(() => {});
       }
     } finally {
-      try { await consumer.disconnect(); } catch {}
+      try {
+        await consumer.disconnect();
+      } catch (err) {
+        this.log.error(
+          {
+            error: err,
+          },
+          "[POWER_MSK_CONSUMER_SUPERVISOR] Error while disconnecting",
+        );
+      }
       this.healthy = false;
       this.ready = false;
-      console.log("[sup] disconnected");
+      this.log.debug("[POWER_MSK_CONSUMER_SUPERVISOR] disconnected");
     }
 
-    return this.stopping ? "ok" : (fatalCrash ? "fatal" : "ok");
+    return this.stopping ? "ok" : fatalCrash ? "fatal" : "ok";
   }
 }

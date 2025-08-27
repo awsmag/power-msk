@@ -1,3 +1,4 @@
+// src/koa/producerMw.ts
 import { DefaultState, Middleware } from "koa";
 import { Kafka, KafkaConfig, CompressionTypes, Message } from "kafkajs";
 import { ResilientProducer } from "../producer/resilientProducer";
@@ -12,21 +13,24 @@ declare module "koa" {
   }
 }
 
+// NEW: type augmentation for shutdown on the middleware function
+export type KafkMwWithShutdown<T = DefaultState> = Middleware<T> & {
+  shutdown: () => Promise<void>;
+};
+
 export type KoaKafkaOptions =
   | { kafka: Kafka }
   | ({ clientId: string; brokers: string[] } & KafkaConfig);
 
 export function getKafkaClientMw<T = DefaultState>(
   opts: KoaKafkaOptions
-): Middleware<T> {
-
+): KafkMwWithShutdown<T> {
   const providedKafka = (opts as any).kafka;
   const kafka =
     providedKafka && typeof providedKafka.producer === "function"
       ? (providedKafka as Kafka)
       : new Kafka(opts as KafkaConfig);
 
-  // Single resilient producer for the app (no per-request connect/disconnect)
   const producer = new ResilientProducer({
     kafka,
     idempotent: true,
@@ -38,18 +42,16 @@ export function getKafkaClientMw<T = DefaultState>(
   });
 
   let started = false;
+  const sig = {
+    term: async () => { try { await producer.stop(); } catch {} },
+    int: async () => { try { await producer.stop(); } catch {} },
+  };
   function ensureStarted() {
     if (!started) {
       started = true;
-      // fire-and-forget; do NOT await (start() runs until stop())
-      producer.start().catch(() => {/* swallow; supervisor logs elsewhere */});
-
-      // optional: graceful stop on signals (do NOT exit the process here)
-      const shutdown = async () => {
-        try { await producer.stop(); } catch {}
-      };
-      process.once("SIGTERM", shutdown);
-      process.once("SIGINT", shutdown);
+      producer.start().catch(() => {});
+      process.once("SIGTERM", sig.term);
+      process.once("SIGINT", sig.int);
     }
   }
 
@@ -63,7 +65,7 @@ export function getKafkaClientMw<T = DefaultState>(
     await producer.send(topic, messages);
   }
 
-  return async (ctx, next) => {
+  const mw: any = async (ctx: any, next: any) => {
     ensureStarted();
     ctx.kafkaClient = {
       sendMessages,
@@ -72,4 +74,16 @@ export function getKafkaClientMw<T = DefaultState>(
     };
     await next();
   };
+
+  mw.shutdown = async () => {
+    if (started) {
+      started = false;
+      // remove our listeners so multiple tests don’t pile up
+      process.removeListener("SIGTERM", sig.term);
+      process.removeListener("SIGINT", sig.int);
+      await producer.stop();
+    }
+  };
+
+  return mw as KafkMwWithShutdown<T>;
 }

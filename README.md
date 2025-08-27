@@ -3,6 +3,7 @@
 **Resilience-first KafkaJS helpers** for production-grade apps on [KafkaJS](https://kafka.js.org/).
 
 👉 Focused on **robust consumers & producers** + simple **Koa middleware**.
+
 👉 You bring your own Kafka config (brokers, SSL, SASL, etc).
 
 ---

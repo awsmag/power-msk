@@ -81,7 +81,7 @@ class FakeKafka {
 // --------------------------
 // Tests (no fake timers)
 // --------------------------
-describe("ResilientProducer (integration-free)", function () {
+describe("ResilientProducer", function () {
   // use real timers, just increase timeout a bit
   this.timeout(15_000);
 

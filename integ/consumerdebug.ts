@@ -1,35 +1,7 @@
-#!/usr/bin/env ts-node
-/**
- * power-msk v2 — Consumer Debug Tool
- *
- * Place this file inside your package repo (e.g., tools/consumer-debug.ts)
- *
- * Examples:
- *   # read from earliest once and print lag periodically
- *   BROKERS=localhost:9092 ts-node tools/consumer-debug.ts --topic=test --group=g1 --fromBeginning --printLag
- *
- *   # reset offsets to earliest (once), then consume new messages
- *   BROKERS=localhost:9092 ts-node tools/consumer-debug.ts --topic=test --group=g1 --resetToEarliest
- *
- * Flags:
- *   --topic=<name>            Topic to consume (default: test-topic)
- *   --group=<name>            Consumer groupId (default: pmsk-g1)
- *   --fromBeginning           Pass through to subscription (or use --seekEarliest)
- *   --seekEarliest            Force a seek to offset=0 for assigned partitions on first GROUP_JOIN
- *   --printLag                Periodically print topic/group offsets & lag (every 10s)
- *   --resetToEarliest         BEFORE starting, reset group offsets to earliest (admin)
- *   --probePort=<port>        Start probe server (/healthz, /readyz)
- *   --debug                   Set KafkaJS log level to DEBUG
- *
- * Env:
- *   BROKERS=localhost:9092   (comma-separated list)
- *   CLIENT_ID=power-msk-consumer-debug
- */
-
 // @ts-nocheck
 
 import { Kafka, logLevel } from "kafkajs";
-import { ConsumerSupervisor } from "../src"; // adjust if your entry point differs
+import { ConsumerSupervisor } from "../src";
 import * as process from "node:process";
 
 function env(name: string, def?: string) { return process.env[name] ?? def ?? ""; }
@@ -124,11 +96,6 @@ const clientId = env("CLIENT_ID", "power-msk-consumer-debug");
 
   // Start the supervisor
   console.log(`[START] brokers=${brokers.join(",")} topic=${topic} group=${groupId} fromBeginning=${fromBeginning} seekEarliest=${seekEarliest}`);
-  // If you want to force a seek to earliest on the first assignment, you can modify your
-  // ConsumerSupervisor to expose the underlying consumer OR temporarily use this trick:
-  //  - Set fromBeginning=true (we already pass it)
-  //  - Also resetToEarliest flag above, which uses admin API to park the group at 0.
-
   await sup.startForever();
 
   // graceful shutdown

@@ -10,7 +10,8 @@
     "postbuild": "tsc",
     "prepublishOnly": "npm run build",
     "test": "mocha -r esbuild-register \"test/**/*.spec.ts\"",
-    "test:consumer": "BROKERS=localhost:9092 ts-node --transpile-only integ/consumerdebug.ts --topic=test --group=g1 --fromBeginning"
+    "test:consumer": "BROKERS=localhost:9092 ts-node --transpile-only integ/consumerdebug.ts --topic=test --group=g1 --fromBeginning",
+    "test:producer": "ts-node --transpile-only integ/producerdebug.ts"
   },
   "types": "dist/types",
   "files": [

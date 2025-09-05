@@ -5,11 +5,7 @@ import { ResilientProducer } from "../src/producer/resilientProducer";
 // --------------------------
 // Small helpers (real timers)
 // --------------------------
-async function waitUntil(
-  cond: () => boolean,
-  stepMs = 20,
-  timeoutMs = 10_000
-) {
+async function waitUntil(cond: () => boolean, stepMs = 20, timeoutMs = 10_000) {
   const start = Date.now();
   while (!cond()) {
     await new Promise((r) => setTimeout(r, stepMs));
@@ -24,7 +20,12 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 class FakeProducer extends EventEmitter {
   public events = { CONNECT: "connect", DISCONNECT: "disconnect" } as const;
   public connected = false;
-  public sends: Array<{ topic: string; messages: any[]; acks?: number; compression?: number }> = [];
+  public sends: Array<{
+    topic: string;
+    messages: any[];
+    acks?: number;
+    compression?: number;
+  }> = [];
   public failNext = 0;
 
   async connect() {
@@ -124,7 +125,10 @@ describe("ResilientProducer", function () {
     expect(p.sends.length).to.equal(2);
     const t1 = p.sends.find((x) => x.topic === "t1")!;
     const t2 = p.sends.find((x) => x.topic === "t2")!;
-    expect(t1.messages.map((m) => m.value.toString())).to.deep.equal(["a", "b"]);
+    expect(t1.messages.map((m) => m.value.toString())).to.deep.equal([
+      "a",
+      "b",
+    ]);
     expect(t2.messages.map((m) => m.value.toString())).to.deep.equal(["c"]);
 
     await rp.stop();
@@ -225,7 +229,10 @@ describe("ResilientProducer", function () {
           aborted = true;
           return origAbort();
         };
-        await txn.send({ topic: "t", messages: [{ value: Buffer.from("nope") }] });
+        await txn.send({
+          topic: "t",
+          messages: [{ value: Buffer.from("nope") }],
+        });
         throw new Error("boom");
       });
       expect.fail("should have thrown");
@@ -234,6 +241,75 @@ describe("ResilientProducer", function () {
     }
     await sleep(5);
     expect(aborted).to.equal(true);
+
+    await rp.stop();
+    await loop;
+  });
+
+  it("sendBatch enqueues multiple topics and resolves once flushed", async () => {
+    const fk = new FakeKafka();
+    const rp = new ResilientProducer({ kafka: fk as any, lingerMs: 5 });
+
+    const loop = rp.start();
+    await waitUntil(() => rp.isReady());
+
+    // enqueue 3 entries → 2 topics (t1 coalesced into a single send)
+    await rp.sendBatch([
+      { topic: "t1", messages: [{ value: Buffer.from("a") }] },
+      { topic: "t1", messages: [{ value: Buffer.from("b") }] },
+      { topic: "t2", messages: [{ value: Buffer.from("c") }] },
+    ]);
+
+    // sendBatch resolves after flush; no extra sleep strictly needed,
+    // but a tiny wait makes the test tolerant to scheduling jitter.
+    await sleep(5);
+
+    const p = fk.lastProducer!;
+    expect(p.sends.length).to.equal(2); // t1 + t2
+
+    const t1 = p.sends.find((s) => s.topic === "t1")!;
+    const t2 = p.sends.find((s) => s.topic === "t2")!;
+    expect(t1.messages.map((m) => m.value.toString())).to.deep.equal([
+      "a",
+      "b",
+    ]);
+    expect(t2.messages.map((m) => m.value.toString())).to.deep.equal(["c"]);
+
+    await rp.stop();
+    await loop;
+  });
+
+  it("sendBatch enforces combined maxQueueBytes backpressure", async () => {
+    const fk = new FakeKafka();
+    const rp = new ResilientProducer({
+      kafka: fk as any,
+      lingerMs: 20,
+      maxQueueBytes: 8, // tiny to trigger backpressure on combined size
+    });
+
+    const loop = rp.start();
+    await waitUntil(() => rp.isReady());
+
+    // first small batch fits (approx size of 'a' + 'b' is small)
+    await rp.sendBatch([
+      { topic: "t", messages: [{ value: Buffer.from("a") }] },
+      { topic: "t", messages: [{ value: Buffer.from("b") }] },
+    ]);
+
+    // second batch is too big together and should throw
+    let err: any;
+    try {
+      await rp.sendBatch([
+        { topic: "t", messages: [{ value: Buffer.from("cccccccc") }] },
+        { topic: "u", messages: [{ value: Buffer.from("dddddddd") }] },
+      ]);
+    } catch (e) {
+      err = e;
+    }
+    expect(String(err?.message || err)).to.match(/queue is full/i);
+
+    // let the first batch flush so we can stop cleanly
+    await sleep(30);
 
     await rp.stop();
     await loop;

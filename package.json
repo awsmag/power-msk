@@ -14,7 +14,7 @@
     "test:consumer": "BROKERS=localhost:9092 ts-node --transpile-only integ/consumerdebug.ts --topic=test --group=g1 --fromBeginning",
     "test:producer": "ts-node --transpile-only integ/producerdebug.ts"
   },
-  "types": "dist/types",
+  "types": "dist/types/src",
   "files": [
     "dist"
   ],

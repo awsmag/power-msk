@@ -6,6 +6,7 @@
   "scripts": {
     "lint": "eslint .",
     "prettier": "prettier --write .",
+    "prebuild": "rimraf dist",
     "build": "node build.js",
     "postbuild": "tsc",
     "prepublishOnly": "npm run build",
@@ -21,7 +22,6 @@
   "author": "Simranjeet Singh",
   "license": "MIT",
   "dependencies": {
-    "@jm18457/kafkajs-msk-iam-authentication-mechanism": "^3.1.2",
     "kafkajs": "^2.2.4",
     "pino": "^9.9.0"
   },
@@ -42,6 +42,7 @@
     "mocha": "^10.8.2",
     "nyc": "^15.1.0",
     "prettier": "^3.6.2",
+    "rimraf": "^6.0.1",
     "sinon": "^21.0.0",
     "supertest": "^7.1.4",
     "ts-node": "^10.9.2",

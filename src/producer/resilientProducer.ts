@@ -40,6 +40,8 @@ type Enqueued = {
   reject: (err: any) => void; //eslint-disable-line
 };
 
+type TopicBatch = { topic: string; messages: Message[] };
+
 type IOpts = Required<
   Omit<
     ResilientProducerOpts,
@@ -168,6 +170,55 @@ export class ResilientProducer {
 
   async sendOne(topic: string, message: Message) {
     return this.send(topic, [message]);
+  }
+
+   /** Enqueue multiple (topic, messages[]) entries in one call */
+  async sendBatch(entries: TopicBatch[]) {
+    if (!this.running) {
+      throw new Error("producer not started");
+    }
+
+    if (!Array.isArray(entries) || entries.length === 0) {
+      throw new Error("entries are required");
+    }
+
+    // compute combined size first for backpressure check
+    let addedBytes = 0;
+    for (const e of entries) {
+      if (!e || !Array.isArray(e.messages) || e.messages.length === 0) {
+        throw new Error("each entry must have non-empty messages");
+      }
+      addedBytes += approxSize(e.messages);
+    }
+
+    if (this.qBytes + addedBytes > this.opts.maxQueueBytes) {
+      throw new Error("producer queue is full");
+    }
+
+    // enqueue all; resolve when all sub-batches resolve
+    return new Promise<void>((resolve, reject) => {
+      let remaining = entries.length;
+      let rejected = false;
+
+      for (const e of entries) {
+        this.q.push({
+          topic: e.topic,
+          messages: e.messages,
+          resolve: () => {
+            if (rejected) return;
+            remaining -= 1;
+            if (remaining === 0) resolve();
+          },
+          reject: (err) => {
+            if (rejected) return;
+            rejected = true;
+            reject(err);
+          },
+        });
+      }
+
+      this.qBytes += addedBytes;
+    });
   }
 
   /**
